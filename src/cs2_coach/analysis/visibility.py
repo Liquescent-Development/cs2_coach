@@ -304,27 +304,62 @@ class VisibilityCalculator(VisibilityChecker):
         damage_events_df: pl.DataFrame,
         tick_events_df: pl.DataFrame,
         max_lookback: int = 64,
+        debug: bool = True,
     ):
         """
         For each damage event:
         1. Find the first tick when the attacker saw the victim
         2. Calculate crosshair placement (angle difference)
         3. Calculate time to damage
+        4. Exclude trigger discipline events (visibility > max_lookback)
 
-        Returns enriched damage events with these metrics
+        Args:
+            damage_events_df: DataFrame containing damage events
+            tick_events_df: DataFrame containing tick events
+            max_lookback: Maximum number of ticks to look back from damage event
+            debug: Whether to print debug information
+
+        Returns:
+            Enriched damage events with first sight, TTD, and crosshair placement metrics
         """
+
+        # Add debug counter
+        processed_count = 0
+        visibility_found_count = 0
+        valid_ttd_count = 0
+        trigger_discipline_count = 0
+
         # Ensure we're using lazy API
         damage_lazy = damage_events_df.lazy()
-        tick_lazy = tick_events_df.lazy()
 
         # Process each damage event (this has to be done row by row)
         results = []
 
+        # Create a tick lookup dictionary to avoid repeated filtering
+        logger.debug(
+            f"Creating tick lookup dictionary from {len(tick_events_df)} tick events"
+        )
+        tick_lookup = {}
+        for tick_event in tick_events_df.iter_rows(named=True):
+            steamid = tick_event["steamid"]
+            tick = tick_event["tick"]
+            if tick not in tick_lookup:
+                tick_lookup[tick] = {}
+            tick_lookup[tick][steamid] = tick_event
+
         # Collect the damage events to iterate through them
         damage_events = damage_lazy.collect()
-        tick_events = tick_lazy.collect()
+
+        logger.debug(f"Processing {len(damage_events)} damage events")
 
         for damage_event in damage_events.iter_rows(named=True):
+            processed_count += 1
+
+            if debug and processed_count % 100 == 0:
+                logger.debug(
+                    f"Processed {processed_count}/{len(damage_events)} damage events"
+                )
+
             attacker_steamid = damage_event["attacker_steamid"]
             victim_steamid = damage_event["victim_steamid"]
             damage_tick = damage_event["tick"]
@@ -332,29 +367,27 @@ class VisibilityCalculator(VisibilityChecker):
             # Get relevant tick range (from damage_tick - max_lookback to damage_tick)
             start_tick = max(0, damage_tick - max_lookback)
 
-            # Filter tick events for the relevant tick range, attacker and victim
-            attacker_ticks = tick_events.filter(
-                (pl.col("tick").is_between(start_tick, damage_tick))
-                & (pl.col("steamid") == attacker_steamid)
-            ).sort("tick")
+            # We need to check if visibility extends before our lookback window
+            # to identify trigger discipline events
 
-            victim_ticks = tick_events.filter(
-                (pl.col("tick").is_between(start_tick, damage_tick))
-                & (pl.col("steamid") == victim_steamid)
-            ).sort("tick")
+            # Track visibility for all ticks in our window
+            visibility_status = []
 
-            first_sight_tick = None
-            first_sight_yaw = None
-            first_sight_pitch = None
-
-            # Find the first tick where attacker saw victim
-            for a_tick in attacker_ticks.iter_rows(named=True):
-                # Find the closest victim tick
-                v_tick = victim_ticks.filter(pl.col("tick") == a_tick["tick"])
-                if len(v_tick) == 0:
+            # Scan from start_tick to damage_tick
+            for current_tick in range(start_tick, damage_tick + 1):
+                # Check if both players have data for this tick
+                if current_tick not in tick_lookup:
+                    visibility_status.append(False)
                     continue
 
-                v_tick = v_tick.row(0, named=True)
+                tick_data = tick_lookup[current_tick]
+
+                if attacker_steamid not in tick_data or victim_steamid not in tick_data:
+                    visibility_status.append(False)
+                    continue
+
+                a_tick = tick_data[attacker_steamid]
+                v_tick = tick_data[victim_steamid]
 
                 # Check visibility
                 is_visible = self.is_target_visible(
@@ -368,10 +401,36 @@ class VisibilityCalculator(VisibilityChecker):
                     target_is_crouched=v_tick["in_crouch"],
                 )
 
+                visibility_status.append(is_visible)
+
+            # Check if this is a trigger discipline event
+            # If the player had visibility at the start of our window AND
+            # at the end (damage tick), it's likely visibility extends beyond our window
+            if visibility_status and visibility_status[0] and visibility_status[-1]:
+                # Check if visibility is continuous throughout our window
+                continuous_visibility = all(visibility_status)
+
+                if continuous_visibility:
+                    # This is a trigger discipline event (visibility > max_lookback)
+                    trigger_discipline_count += 1
+                    continue
+
+            # Find first tick where visibility begins
+            first_sight_tick = None
+            first_sight_yaw = None
+            first_sight_pitch = None
+
+            for i, is_visible in enumerate(visibility_status):
                 if is_visible:
-                    first_sight_tick = a_tick["tick"]
+                    # Found first visibility
+                    current_tick = start_tick + i
+                    tick_data = tick_lookup[current_tick]
+                    a_tick = tick_data[attacker_steamid]
+
+                    first_sight_tick = current_tick
                     first_sight_yaw = a_tick["yaw"]
                     first_sight_pitch = a_tick["pitch"]
+                    visibility_found_count += 1
                     break
 
             # Skip if no visibility found
@@ -385,6 +444,8 @@ class VisibilityCalculator(VisibilityChecker):
             # If TTD > 1s, exclude as per requirements
             if time_to_damage > 1.0:
                 continue
+
+            valid_ttd_count += 1
 
             # Calculate crosshair placement (angle difference)
             angle_diff = self._calculate_angle_difference(
@@ -403,8 +464,16 @@ class VisibilityCalculator(VisibilityChecker):
             }
             results.append(result_row)
 
+        # Log statistics
+        logger.debug(f"Processed {processed_count} damage events")
+        logger.debug(f"Found visibility for {visibility_found_count} events")
+        logger.debug(f"Excluded trigger discipline events: {trigger_discipline_count}")
+        logger.debug(f"Found valid TTD (<= 1s) for {valid_ttd_count} events")
+        logger.debug(f"Final result count: {len(results)}")
+
         # Convert results to a DataFrame
         if not results:
+            logger.warning("No results found matching criteria")
             return pl.DataFrame(
                 schema={
                     **damage_events.schema,
