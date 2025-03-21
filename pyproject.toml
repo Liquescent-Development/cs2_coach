@@ -1,0 +1,29 @@
+[project]
+name = "cs2-coach"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Richard Kiene",email = "richard@kiene.app"}
+]
+license = {text = "AGPLv3"}
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "awpy (>=2.0.2,<3.0.0)",
+    "numpy (>=2.2.4,<3.0.0)",
+    "scikit-learn (>=1.6.1,<2.0.0)",
+    "click (>=8.1.8,<9.0.0)",
+    "pytest (>=8.3.5,<9.0.0)",
+    "polars (>=1.25.2,<2.0.0)",
+    "loguru (>=0.7.3,<0.8.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11.1"
+pytest = "^8.3.5"
+
