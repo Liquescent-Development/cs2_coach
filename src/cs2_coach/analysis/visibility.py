@@ -314,7 +314,7 @@ class VisibilityCalculator(VisibilityChecker):
         4. Exclude trigger discipline events (visibility > max_lookback)
 
         Args:
-            damage_events_df: DataFrame containing damage events
+            damage_events_df: DataFrame containing damage events (already filtered for burst fire)
             tick_events_df: DataFrame containing tick events
             max_lookback: Maximum number of ticks to look back from damage event
             debug: Whether to print debug information
