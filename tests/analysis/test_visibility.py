@@ -68,14 +68,13 @@ class TestEventMetrics(unittest.TestCase):
             victim_yaw,
             victim_pitch,
             victim_is_crouched,
-            fov=90.00,
         )
         self.assertEqual(is_visible, True)
 
     # TODO: This belongs in the test_events.py file not here
-    def test_analyze_player_performance_simple(self):
+    def test_analyze_player_performance_mirage_demo(self):
         """
-        Test basic visibility between two players with no obstacles.
+        Test TTD and Crosshair placement for a Mirage demo.
         """
 
         player_metrics, enriched_events = (

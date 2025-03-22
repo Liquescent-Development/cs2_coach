@@ -292,18 +292,6 @@ class VisibilityCalculator(VisibilityChecker):
 
         return angle_between <= fov / 2
 
-    def _is_within_fov_old(
-        self, direction_vec: Vector3, target_vec: Vector3, fov: float
-    ) -> bool:
-        """Check if the target vector is within the field of view."""
-        rel_dir = (
-            target_vec - Vector3(0, 0, 0)
-        ).normalize()  # Assuming origin for relative direction
-        dot_product = direction_vec.dot(rel_dir)
-        dot_product = max(-1.0, min(1.0, dot_product))
-        angle_between = math.degrees(math.acos(dot_product))
-        return angle_between <= fov / 2
-
     def _calculate_angle_difference(
         self,
         attacker_yaw: float,
@@ -311,7 +299,10 @@ class VisibilityCalculator(VisibilityChecker):
         initial_yaw: float,
         initial_pitch: float,
     ) -> float:
-        """Calculate the angular difference between two aim positions in degrees."""
+        """
+        Calculate the angular difference between two aim positions in degrees.
+        This represents the crosshair placement accuracy.
+        """
         # Calculate yaw difference (handle 360 degree wrapping)
         yaw_diff = min(
             abs(attacker_yaw - initial_yaw), 360 - abs(attacker_yaw - initial_yaw)
@@ -320,8 +311,17 @@ class VisibilityCalculator(VisibilityChecker):
         # Calculate pitch difference
         pitch_diff = abs(attacker_pitch - initial_pitch)
 
-        # Calculate 3D angular difference (Pythagorean theorem in spherical coordinates)
-        return math.sqrt(yaw_diff**2 + pitch_diff**2)
+        # Apply weights to yaw and pitch differences
+        # This may be useful to fine tune crosshair placement accuracy
+        yaw_weight = 1.0
+        pitch_weight = 1.0
+
+        # Calculate weighted angular difference
+        weighted_diff = math.sqrt(
+            (yaw_diff * yaw_weight) ** 2 + (pitch_diff * pitch_weight) ** 2
+        )
+
+        return weighted_diff
 
     def find_first_sightings_and_metrics(
         self,
@@ -465,7 +465,7 @@ class VisibilityCalculator(VisibilityChecker):
             tick_difference = damage_tick - first_sight_tick
             time_to_damage = tick_difference / 64.0  # seconds
 
-            # If TTD > 1s, exclude as per requirements
+            # If TTD > 1s we treat it as a trigger discipline event and skip it
             if time_to_damage > 1.0:
                 continue
 
