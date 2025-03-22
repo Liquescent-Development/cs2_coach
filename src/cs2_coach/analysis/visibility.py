@@ -70,7 +70,7 @@ class VisibilityCalculator(VisibilityChecker):
         pitch_rad = math.radians(pitch)
         x = math.cos(yaw_rad) * math.cos(pitch_rad)
         y = math.sin(yaw_rad) * math.cos(pitch_rad)
-        z = math.sin(pitch_rad)
+        z = -math.sin(pitch_rad)  # TODO: TEST THIS
         return Vector3(x, y, z)
 
     def _vector_norm(self, vec: Vector3) -> float:
