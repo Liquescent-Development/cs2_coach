@@ -68,6 +68,7 @@ class TestEventMetrics(unittest.TestCase):
             victim_yaw,
             victim_pitch,
             victim_is_crouched,
+            fov=90.00,
         )
         self.assertEqual(is_visible, True)
 

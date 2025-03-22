@@ -236,25 +236,31 @@ class VisibilityCalculator(VisibilityChecker):
         target_yaw: float,
         target_pitch: float,
         target_is_crouched: bool,
-        fov: float = 180.00,
+        fov: float = 90.00,
     ) -> bool:
         """Check if the player at the start vector can see the player at the end vector."""
-
         player_eye_vec = self._calculate_eye_height(player_vec, player_is_crouched)
         target_eye_vec = self._calculate_eye_height(target_vec, target_is_crouched)
-        target_forward = self._calculate_direction_vector(
-            target_yaw, target_pitch
-        ).normalize()
-        sample_points = self._generate_target_sample_points(
-            target_eye_vec, target_forward
-        )
 
-        direction_vec = self._calculate_direction_vector(
+        # Player's view direction
+        player_direction = self._calculate_direction_vector(
             player_yaw, player_pitch
         ).normalize()
 
+        # Target's facing direction (for sample points)
+        target_forward = self._calculate_direction_vector(
+            target_yaw, target_pitch
+        ).normalize()
+
+        # Generate sample points on the target
+        sample_points = self._generate_target_sample_points(
+            target_eye_vec, target_forward
+        )
         for sample_point in sample_points:
-            if not self._is_within_fov(direction_vec, sample_point, fov):
+            # Check if the sample point is within the player's FOV
+            if not self._is_within_fov(
+                player_eye_vec, player_direction, sample_point, fov
+            ):
                 continue
 
             direction = (sample_point - player_eye_vec).normalize()
@@ -269,6 +275,24 @@ class VisibilityCalculator(VisibilityChecker):
         return False
 
     def _is_within_fov(
+        self,
+        player_pos: Vector3,
+        player_direction: Vector3,
+        target_pos: Vector3,
+        fov: float,
+    ) -> bool:
+        """Check if the target position is within the player's field of view."""
+        # Vector from player to target
+        to_target = (target_pos - player_pos).normalize()
+
+        # Calculate the angle between player's direction and vector to target
+        dot_product = player_direction.dot(to_target)
+        dot_product = max(-1.0, min(1.0, dot_product))  # Clamp to valid range
+        angle_between = math.degrees(math.acos(dot_product))
+
+        return angle_between <= fov / 2
+
+    def _is_within_fov_old(
         self, direction_vec: Vector3, target_vec: Vector3, fov: float
     ) -> bool:
         """Check if the target vector is within the field of view."""
